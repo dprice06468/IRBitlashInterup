@@ -2,17 +2,13 @@
 //#include <IRremoteInt.h>
 #include "bitlash.h"
 
-String iractionstr = "function iraction {d9=1;delay(2000);d9=0;}";
-String irfunctionstr = "function irfunction {iraction;}";
-String toggle9str = "function toggle9 {d9=!d9;}";
-String toggle8str = "function toggle8 {d8=!d8;}";
-String sbactionstr = "function sbaction {run toggle8, 1000;}";
+//strings containing proximity and IR script to be loaded during setup()
+String irscriptstr  = "function irscript {if (!g) {d9=0;i=0;r=0;} else if (r) {i++;d9=!d9;if (i==6) {i=0;r=0;}} snooze(1000);}";
+String prxscriptstr = "function prxscript {if (r || !g) {d8=0;j=0;} else {j++;d8=!d8;if (j==6) j=0;} snooze(2000);}";
 
 int pinLED = 9;
 int recvPin = 5;        //PIN receiving signal from IR
-boolean funcsLoaded = false;
-boolean runmode = true;
-boolean sbRunning = false;
+boolean scriptsLoaded = false;  //variable to indicate whether scripts have been loaded
 
 IRrecv irrecv(recvPin);
 decode_results results;
@@ -24,12 +20,14 @@ numvar ping(void) {
 
 //-------------------------------------------------------------------
 numvar start(void) {
-  runmode = true;
+  assignVar('g'-'a', 1);
+  Serial.println("Scripts are running.  Type 'standby' to pause.");
 }
 
 //-------------------------------------------------------------------
 numvar standby(void) {
-  runmode = false;
+  assignVar('g'-'a', 0);
+  Serial.println("Scripts are paused. Type 'start' to resume running.");
 }
 
 //----------------------------------------------------------------------
@@ -45,7 +43,10 @@ void setup() {
 
   // add custom function to handle ping
   addBitlashFunction("ping", (bitlash_function) ping);
+  //add custom function to start the controller
   addBitlashFunction("start", (bitlash_function) start);
+  //add customer function to pause the controller
+  //this will be used in case of a master scene sequence
   addBitlashFunction("standby", (bitlash_function) standby);
 }
 
@@ -67,22 +68,27 @@ boolean checkIR() {
 void loop() {
   runBitlash();
 
-  if (!funcsLoaded)
+  if (!scriptsLoaded)
   {
-    funcsLoaded = true;
+    scriptsLoaded = true;
+    //load the proximity and IR scripts
     doCommand("rm *");
-    doCommand(&iractionstr[0u]);
-    doCommand(&sbactionstr[0u]);
-    doCommand(&irfunctionstr[0u]);
-    doCommand(&toggle8str[0u]);
-    doCommand(&toggle9str[0u]);
+    doCommand(&prxscriptstr[0u]);
+    doCommand(&irscriptstr[0u]);
+    delay(500);
+
+    // start the proximity and IR scripts running in the background.
+    doCommand("run prxscript;");
+    doCommand("run irscript;");
+    delay(500);
+
+//    Serial.println("Controller is running. Type 'start' to start scripts and 'standby' to pause scripts.");
+    Serial.println("Commands: 'start' or 'standby'");
   }
 
-  if (runmode) {
-    if (!sbRunning) {doCommand("sbaction;"); sbRunning = true;}
-    if (checkIR()) doCommand("irfunction;");
-  } else {
-    if (sbRunning) {doCommand("stop 0;"); sbRunning = false;}
+  //if the controller is in "go" mode, check for an IR signal
+  if (getVar('g'-'a')) {
+    if (checkIR()) {assignVar('r'-'a', 1);};
   }
 }
 
